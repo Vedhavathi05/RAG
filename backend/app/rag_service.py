@@ -1,6 +1,6 @@
 """
 RAG Service - grounded QA using retrieved chunks only
-(MISTRAL-7B-INSTRUCT STABLE HF VERSION)
+(MISTRAL-7B-INSTRUCT DEBUG VERSION FOR RENDER)
 """
 
 import sys
@@ -12,11 +12,22 @@ import requests
 from difflib import SequenceMatcher
 from dotenv import load_dotenv
 
+print("\n[RAG] Initializing RAG service...")
+
 # ---------------------------------------------------
 # Environment
 # ---------------------------------------------------
 load_dotenv(override=False)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+HF_TOKEN = os.getenv("HF_API_TOKEN")
+
+print("[RAG] HF token present:", bool(HF_TOKEN))
+
+if not HF_TOKEN:
+    raise RuntimeError(
+        "HF_API_TOKEN not set. Add it in Render Environment Variables."
+    )
 
 # ---------------------------------------------------
 # Add project root
@@ -27,20 +38,14 @@ ROOT = os.path.abspath(os.path.join(BACKEND_DIR, "../.."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+print("[RAG] Importing retriever...")
 from retriever.retriever import retrieve
+print("[RAG] ✓ Retriever imported")
+
 
 # ===================================================
-# HF API CLIENT (MISTRAL)
+# HF API CLIENT
 # ===================================================
-
-HF_TOKEN = os.getenv("HF_API_TOKEN")
-
-if not HF_TOKEN:
-    raise RuntimeError(
-        "HF_API_TOKEN not set. Add it in Render Environment Variables."
-    )
-
-
 class HFLLM:
 
     def __init__(self):
@@ -55,8 +60,12 @@ class HFLLM:
         }
 
         self.max_retries = 5
+        print("[HF] Client ready")
 
     def __call__(self, prompt, max_new_tokens=160):
+
+        print("[HF] Sending generation request...")
+        sys.stdout.flush()
 
         payload = {
             "inputs": prompt,
@@ -71,6 +80,8 @@ class HFLLM:
         for attempt in range(self.max_retries):
 
             try:
+                print(f"[HF] Attempt {attempt+1}")
+
                 response = requests.post(
                     self.url,
                     headers=self.headers,
@@ -78,33 +89,37 @@ class HFLLM:
                     timeout=120,
                 )
 
-                # HF sometimes returns HTML/503
+                print("[HF] Status:", response.status_code)
+
                 try:
                     result = response.json()
                 except Exception:
+                    print("[HF] Non-JSON response, retrying...")
                     time.sleep(3)
                     continue
 
-                # ----- Cold start handling -----
+                # cold start
                 if isinstance(result, dict) and "error" in result:
                     err = result["error"].lower()
+                    print("[HF ERROR]", err)
 
                     if "loading" in err:
                         wait = 5 + attempt * 2
-                        print(f"[HF] Model loading... retry in {wait}s")
+                        print(f"[HF] Model loading — waiting {wait}s")
                         time.sleep(wait)
                         continue
 
-                    print("[HF ERROR]", result["error"])
                     return [{"generated_text": ""}]
 
                 if isinstance(result, list) and result:
+                    print("[HF] Generation success")
                     return [{
                         "generated_text":
                         result[0].get("generated_text", "")
                     }]
 
             except Exception:
+                print("[HF EXCEPTION]")
                 traceback.print_exc()
                 time.sleep(3)
 
@@ -115,14 +130,11 @@ class HFLLM:
 # ===================================================
 # TEXT HELPERS
 # ===================================================
-
 def clean_text(text: str):
     text = " ".join(text.split())
-
     text = re.sub(r'^[A-Z\s]{3,}[-—:]\s*', '', text)
     text = re.sub(r'^GLOSSARY\s*', '', text, flags=re.I)
     text = re.sub(r'Heading:\s*', '', text, flags=re.I)
-
     return text.strip()
 
 
@@ -133,11 +145,9 @@ def similar(a, b):
 def remove_redundancy(text, threshold=0.8):
     sentences = re.split(r'(?<=[.!?]) +', text)
     clean = []
-
     for s in sentences:
         if not any(similar(s, c) > threshold for c in clean):
             clean.append(s)
-
     return " ".join(clean)
 
 
@@ -152,32 +162,26 @@ def finish_sentence(text):
 
 def safe_preview(text, limit=200):
     text = clean_text(text)
-
     if len(text) <= limit:
         return text
-
     cut = text[:limit]
     last = cut.rfind(".")
-
     if last > 50:
         return cut[: last + 1]
-
     return cut + "..."
 
 
-# ---------------------------------------------------
+# ===================================================
 # CONTEXT BUILDER
-# ---------------------------------------------------
+# ===================================================
 def build_context(chunks, max_chars=1400):
 
+    print("[RAG] Building context...")
     context_parts = []
     size = 0
 
     for c in chunks:
         text = clean_text(c["text"])
-
-        if text.lower().startswith("glossary"):
-            continue
 
         if size + len(text) > max_chars:
             break
@@ -185,20 +189,16 @@ def build_context(chunks, max_chars=1400):
         context_parts.append(text)
         size += len(text)
 
+    print("[RAG] Context size:", size)
     return "\n".join(context_parts)
 
 
-# ---------------------------------------------------
-# PROMPT (MISTRAL INSTRUCT FORMAT)
-# ---------------------------------------------------
+# ===================================================
+# PROMPT
+# ===================================================
 def build_prompt(query, context):
-
     return f"""<s>[INST]
-You are a medical assistant.
-
-Answer the question using ONLY the provided context.
-Give a short, direct factual answer.
-Do not include headings or extra explanation.
+Answer using ONLY the context.
 
 Context:
 {context}
@@ -213,29 +213,47 @@ Question: {query}
 class RAGService:
 
     def __init__(self):
+        print("[RAG] Creating service...")
         self.llm = HFLLM()
 
     def answer(self, query: str, context: str = ""):
 
+        print("\n[RAG] ===============================")
+        print("[RAG] Query:", query)
+        sys.stdout.flush()
+
         try:
+            # ---------------- RETRIEVE ----------------
+            print("[RAG] Retrieving chunks...")
             chunks = retrieve(query)
 
+            print("[RAG] Retrieved chunks:", len(chunks))
+
             if not chunks:
+                print("[RAG] No chunks found")
                 return {
                     "answer": "No relevant information found.",
                     "citations": [],
                     "original_query": query,
                 }
 
+            # ---------------- BUILD CONTEXT ----------------
             context_text = build_context(chunks)
+
+            # ---------------- PROMPT ----------------
+            print("[RAG] Building prompt...")
             prompt = build_prompt(query, context_text)
 
+            # ---------------- GENERATION ----------------
+            print("[RAG] Calling LLM...")
             output = self.llm(prompt)[0]["generated_text"].strip()
+
+            print("[RAG] Raw output:", output[:120])
 
             answer = finish_sentence(remove_redundancy(output))
 
-            # fallback if empty generation
             if not answer:
+                print("[RAG] Empty generation fallback used")
                 answer = safe_preview(chunks[0]["text"], 200)
 
             citations = [
@@ -249,6 +267,9 @@ class RAGService:
                 for i, c in enumerate(chunks)
             ]
 
+            print("[RAG] Answer ready")
+            print("[RAG] ===============================\n")
+
             return {
                 "answer": answer,
                 "citations": citations,
@@ -256,6 +277,7 @@ class RAGService:
             }
 
         except Exception as e:
+            print("\n[RAG FATAL ERROR]")
             traceback.print_exc()
 
             return {
@@ -270,3 +292,4 @@ class RAGService:
 # GLOBAL INSTANCE
 # ---------------------------------------------------
 rag_service = RAGService()
+print("[RAG] ✓ Service ready\n")

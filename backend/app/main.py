@@ -2,14 +2,18 @@
 FastAPI Backend for RAG Chat Application
 Provides REST API for chat, conversation management, and history
 """
-from fastapi import FastAPI, HTTPException, WebSocket
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-import json
 import traceback
+import sys
 
-print("[Main] Loading models...")
+print("\n[Main] Loading models...")
 
+# --------------------------------------------------
+# Imports with startup diagnostics
+# --------------------------------------------------
 try:
     from app.models import ChatRequest, ChatResponse, Message
     print("[Main] ✓ Models imported")
@@ -31,41 +35,45 @@ except Exception as e:
     print(f"[Main] ✗ Failed to initialize RAG service: {e}")
     traceback.print_exc()
 
-# Lifespan context
+sys.stdout.flush()
+
+# --------------------------------------------------
+# Lifespan
+# --------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     print("[FastAPI] Starting up...")
     yield
-    # Shutdown
     print("[FastAPI] Shutting down...")
 
-# Create FastAPI app
+
+# --------------------------------------------------
+# FastAPI App
+# --------------------------------------------------
 print("[Main] Creating FastAPI app...")
 app = FastAPI(title="RAG Chat API", version="1.0.0", lifespan=lifespan)
 
-# CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten later
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 print("[Main] ✓ FastAPI app configured with CORS")
-import sys
 sys.stdout.flush()
 
-# =====================
+# ==================================================
 # CONVERSATION ENDPOINTS
-# =====================
+# ==================================================
 
 @app.post("/api/conversations/create")
 def create_conversation(title: str = "New Conversation"):
-    """Create a new conversation"""
     try:
+        print("[API] Creating conversation")
         conv = db.create_conversation(title)
+
         return {
             "id": conv.id,
             "title": conv.title,
@@ -73,25 +81,30 @@ def create_conversation(title: str = "New Conversation"):
             "messages": []
         }
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/conversations")
 def list_conversations():
-    """List all conversations"""
     try:
+        print("[API] Listing conversations")
         conversations = db.list_conversations()
         return {"conversations": conversations}
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/conversations/{conversation_id}")
 def get_conversation(conversation_id: str):
-    """Get a specific conversation with full history"""
     try:
+        print(f"[API] Fetch conversation {conversation_id}")
+
         conv = db.get_conversation(conversation_id)
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
-        
+
         return {
             "id": conv.id,
             "title": conv.title,
@@ -108,99 +121,158 @@ def get_conversation(conversation_id: str):
                 for msg in conv.messages
             ]
         }
+
     except HTTPException:
         raise
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.delete("/api/conversations/{conversation_id}")
 def delete_conversation(conversation_id: str):
-    """Delete a conversation"""
     try:
+        print(f"[API] Delete conversation {conversation_id}")
+
         success = db.delete_conversation(conversation_id)
         if not success:
             raise HTTPException(status_code=404, detail="Conversation not found")
+
         return {"status": "deleted"}
+
     except HTTPException:
         raise
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-# =====================
-# CHAT ENDPOINTS
-# =====================
+
+# ==================================================
+# CHAT ENDPOINT (HEAVY DEBUG VERSION)
+# ==================================================
 
 @app.post("/api/chat")
 def chat(request: ChatRequest):
-    """
-    Send a message and get a response
-    Handles context from previous messages for follow-ups
-    """
+
+    print("\n================ CHAT REQUEST ================")
+    print("[CHAT] conversation_id:", request.conversation_id)
+    print("[CHAT] query:", request.query)
+    sys.stdout.flush()
+
     try:
+        # ---------------------------------------------
+        # Load conversation
+        # ---------------------------------------------
+        print("[CHAT] Loading conversation...")
         conv = db.get_conversation(request.conversation_id)
+
         if not conv:
+            print("[CHAT ERROR] Conversation not found")
             raise HTTPException(status_code=404, detail="Conversation not found")
-        
-        # Add user message
+
+        print("[CHAT] Conversation loaded")
+
+        # ---------------------------------------------
+        # Save user message
+        # ---------------------------------------------
+        print("[CHAT] Saving user message...")
         db.add_message(request.conversation_id, "user", request.query)
-        
-        # Get RAG answer with context
-        rag_result = rag_service.answer(request.query, context=conv.context)
-        
-        if rag_result.get('error'):
-            raise HTTPException(status_code=500, detail=rag_result['answer'])
-        
-        # Add assistant response
+
+        # ---------------------------------------------
+        # CALL RAG
+        # ---------------------------------------------
+        print("[CHAT] Calling RAG service...")
+        sys.stdout.flush()
+
+        rag_result = rag_service.answer(
+            request.query,
+            context=conv.context
+        )
+
+        print("[CHAT] RAG result keys:", list(rag_result.keys()))
+        sys.stdout.flush()
+
+        # DO NOT CRASH API ON RAG FAILURE
+        if rag_result.get("error"):
+            print("[CHAT WARNING] RAG returned error:")
+            print(rag_result["answer"])
+
+        # ---------------------------------------------
+        # Save assistant message
+        # ---------------------------------------------
+        print("[CHAT] Saving assistant response...")
         db.add_message(
             request.conversation_id,
             "assistant",
-            rag_result['answer'],
-            citations=rag_result['citations']
+            rag_result.get("answer", ""),
+            citations=rag_result.get("citations", [])
         )
-        
-        # Update context for follow-up questions
-        updated_context = conv.context + f"\n\nQ: {request.query}\nA: {rag_result['answer']}"
-        if len(updated_context) > 2000:  # Limit context size
+
+        # ---------------------------------------------
+        # Update context safely
+        # ---------------------------------------------
+        old_context = conv.context or ""
+
+        updated_context = (
+            old_context
+            + f"\n\nQ: {request.query}\nA: {rag_result.get('answer','')}"
+        )
+
+        if len(updated_context) > 2000:
             updated_context = updated_context[-2000:]
+
         db.update_context(request.conversation_id, updated_context)
-        
+
+        print("[CHAT] Response complete")
+        print("================================================\n")
+        sys.stdout.flush()
+
         return ChatResponse(
             id=request.conversation_id,
-            message=rag_result['answer'],
-            citations=rag_result['citations']
+            message=rag_result.get("answer", ""),
+            citations=rag_result.get("citations", [])
         )
+
     except HTTPException:
         raise
+
     except Exception as e:
+        print("\n[CHAT FATAL ERROR]")
+        traceback.print_exc()
+        sys.stdout.flush()
         raise HTTPException(status_code=500, detail=str(e))
 
-# =====================
-# HEALTH CHECK
-# =====================
+
+# ==================================================
+# HEALTH
+# ==================================================
 
 @app.get("/api/health")
 def health_check():
-    """Health check endpoint"""
+    print("[API] Health check OK")
     return {"status": "ok"}
 
-# =====================
-# ROOT ENDPOINT
-# =====================
+
+# ==================================================
+# ROOT
+# ==================================================
 
 @app.get("/")
 def root():
-    """Root endpoint"""
     return {
         "name": "RAG Chat API",
         "version": "1.0.0",
         "docs": "/docs"
     }
 
+
 print("[Main] ✓ All endpoints registered")
 print("[Main] ✓ FastAPI app ready!")
-import sys
 sys.stdout.flush()
 
+# --------------------------------------------------
+# Local Run
+# --------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
