@@ -47,11 +47,7 @@ app = FastAPI(title="RAG Chat API", version="1.0.0", lifespan=lifespan)
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "https://rag-chatbot-uqml.onrender.com",
-    ],
+    allow_origins=["*"],  # tighten later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
