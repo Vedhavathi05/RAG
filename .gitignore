@@ -1,0 +1,60 @@
+# ----------------------------
+# Python
+# ----------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite3-journal
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# ----------------------------
+# Node (frontend)
+# ----------------------------
+frontend/node_modules/
+frontend/dist/
+
+# ----------------------------
+# ChromaDB temp files
+# (KEEP actual DB)
+# ----------------------------
+rag_index/chroma_db/*.lock
+rag_index/chroma_db/**/*.wal
+
+# ----------------------------
+# Build / cache
+# ----------------------------
+.cache/
+*.tmp
+
+# ----------------------------
+# Testing
+# ----------------------------
+.pytest_cache/
+.coverage
+
+# ----------------------------
+# Logs
+# ----------------------------
+logs/
+*.out
+
+rag_index/chunks/

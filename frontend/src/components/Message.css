@@ -1,0 +1,139 @@
+.message {
+  display: flex;
+  margin-bottom: 8px;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-user {
+  justify-content: flex-end;
+}
+
+.message-assistant {
+  justify-content: flex-start;
+}
+
+.message-content {
+  max-width: 70%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+.message-user .message-content {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.message-assistant .message-content {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.message-text {
+  font-size: 15px;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.message-citations {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.citations-header {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.7;
+}
+
+.citations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.citation-item {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  opacity: 0.9;
+  padding: 8px;
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+}
+
+.citation-rank {
+  font-weight: 600;
+  min-width: 20px;
+  text-align: center;
+}
+
+.citation-info {
+  flex: 1;
+}
+
+.citation-source {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.citation-text {
+  font-size: 11px;
+  opacity: 0.8;
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.message-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.message-time {
+  opacity: 0.6;
+  font-size: 11px;
+}
+
+.copy-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.copy-btn:hover {
+  opacity: 1;
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+@media (max-width: 768px) {
+  .message-content {
+    max-width: 90%;
+  }
+}
