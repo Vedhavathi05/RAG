@@ -1,0 +1,57 @@
+{
+  "id": "06cc9450-f5bc-4e1c-bc5c-9da5dc4f56d7",
+  "title": "New Conversation",
+  "created_at": "2026-02-25T10:32:43.726785",
+  "updated_at": "2026-02-25T10:32:57.846268",
+  "context": "\n\nQ: what is measles\nA: ",
+  "messages": [
+    {
+      "role": "user",
+      "content": "what is measles",
+      "timestamp": "2026-02-25T10:32:48.666203",
+      "citations": null
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "timestamp": "2026-02-25T10:32:57.840175",
+      "citations": [
+        {
+          "rank": 1,
+          "source": "disease-handbook-complete_cleaned.txt",
+          "position": 0,
+          "score": 0.8008100840702532,
+          "text": "MEASLES Measles (aka, rubeola, red measles or hard measles) is a very communicable viral illness that can be prevented by immunization."
+        },
+        {
+          "rank": 2,
+          "source": "disease-handbook-complete_cleaned.txt",
+          "position": 1,
+          "score": 0.7809639012830207,
+          "text": "MEASLES Measles is one of the_most_readily transmissible communicable diseases. The communicable period is greatest prior to or just after rash onset."
+        },
+        {
+          "rank": 3,
+          "source": "who-recommended-surveillance-standards17363eff-9860-48c1-9f5f-3c0c3a4f955d_cleaned.txt",
+          "position": 0,
+          "score": 0.7214470158149665,
+          "text": "RATIONALE FOR SURVEILLANCE Measles is targeted for a reduction by 90% for incidence and by 95% for mortality (Q9GPW 6.2). Surveillance for measles evolves with each phase of measles control."
+        },
+        {
+          "rank": 4,
+          "source": "who-recommended-surveillance-standards17363eff-9860-48c1-9f5f-3c0c3a4f955d_cleaned.txt",
+          "position": 0,
+          "score": 0.7156496739071637,
+          "text": "RECOMMENDED CASE DEFINITION Clinical case definition Any person with: e fever, and ¢ maculopapular (i.e. non-vesicular) rash, and « cough, coryza (i.e. runny nose) or conjunctivitis (i.e. red eyes)."
+        },
+        {
+          "rank": 5,
+          "source": "disease-handbook-complete_cleaned.txt",
+          "position": 0,
+          "score": 0.7112919228746204,
+          "text": "NEW HAMPSHIRE DEPARTMENT OF HEALTH AND HUMAN SERVICES RUBELLA (GERMAN MEASLES) Rubella is a childhood viral disease, which causes a rash, low-grade fever and swollen glands in the area behind the ears..."
+        }
+      ]
+    }
+  ]
+}

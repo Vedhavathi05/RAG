@@ -11,6 +11,8 @@ import traceback
 import requests
 from difflib import SequenceMatcher
 from dotenv import load_dotenv
+from huggingface_hub import InferenceClient
+from groq import Groq
 
 print("\n[RAG] Initializing RAG service...")
 
@@ -46,90 +48,46 @@ print("[RAG] ✓ Retriever imported")
 # ===================================================
 # HF API CLIENT
 # ===================================================
+# ===================================================
+# HF API CLIENT
+# ===================================================
+
 class HFLLM:
 
     def __init__(self):
-        self.url = (
-            "https://api-inference.huggingface.co/models/"
-            "mistralai/Mistral-7B-Instruct-v0.2"
+        print("[LLM] Initializing Groq client...")
+
+        self.client = Groq(
+            api_key=os.getenv("GROQ_API_KEY")
         )
 
-        self.headers = {
-            "Authorization": f"Bearer {HF_TOKEN}",
-            "Content-Type": "application/json",
-        }
-
-        self.max_retries = 5
-        print("[HF] Client ready")
+        print("[LLM] Client ready")
 
     def __call__(self, prompt, max_new_tokens=160):
 
-        print("[HF] Sending generation request...")
+        print("[LLM] Sending generation request...")
         sys.stdout.flush()
 
-        payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_new_tokens": max_new_tokens,
-                "temperature": 0.1,
-                "do_sample": False,
-                "return_full_text": False,
-            },
-        }
+        try:
+            response = self.client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=max_new_tokens,
+            )
 
-        for attempt in range(self.max_retries):
+            return [{
+                "generated_text":
+                response.choices[0].message.content.strip()
+            }]
 
-            try:
-                print(f"[HF] Attempt {attempt+1}")
-
-                response = requests.post(
-                    self.url,
-                    headers=self.headers,
-                    json=payload,
-                    timeout=120,
-                )
-
-                print("[HF] Status:", response.status_code)
-
-                try:
-                    result = response.json()
-                except Exception:
-                    print("[HF] Non-JSON response, retrying...")
-                    time.sleep(3)
-                    continue
-
-                # cold start
-                if isinstance(result, dict) and "error" in result:
-                    err = result["error"].lower()
-                    print("[HF ERROR]", err)
-
-                    if "loading" in err:
-                        wait = 5 + attempt * 2
-                        print(f"[HF] Model loading — waiting {wait}s")
-                        time.sleep(wait)
-                        continue
-
-                    return [{"generated_text": ""}]
-
-                if isinstance(result, list) and result:
-                    print("[HF] Generation success")
-                    return [{
-                        "generated_text":
-                        result[0].get("generated_text", "")
-                    }]
-
-            except Exception:
-                print("[HF EXCEPTION]")
-                traceback.print_exc()
-                time.sleep(3)
-
-        print("[HF] Max retries exceeded")
-        return [{"generated_text": ""}]
-
-
-# ===================================================
-# TEXT HELPERS
-# ===================================================
+        except Exception:
+            print("[LLM EXCEPTION]")
+            traceback.print_exc()
+            return [{"generated_text": ""}]
+        
 def clean_text(text: str):
     text = " ".join(text.split())
     text = re.sub(r'^[A-Z\s]{3,}[-—:]\s*', '', text)
@@ -176,7 +134,6 @@ def safe_preview(text, limit=200):
 # ===================================================
 def build_context(chunks, max_chars=1400):
 
-    print("[RAG] Building context...")
     context_parts = []
     size = 0
 
@@ -189,7 +146,6 @@ def build_context(chunks, max_chars=1400):
         context_parts.append(text)
         size += len(text)
 
-    print("[RAG] Context size:", size)
     return "\n".join(context_parts)
 
 
@@ -198,7 +154,8 @@ def build_context(chunks, max_chars=1400):
 # ===================================================
 def build_prompt(query, context):
     return f"""<s>[INST]
-Answer using ONLY the context.
+Answer the question using ONLY the context below.
+If the answer is not present in the context, say you do not know.
 
 Context:
 {context}
@@ -220,19 +177,16 @@ class RAGService:
 
         print("\n[RAG] ===============================")
         print("[RAG] Query:", query)
-        sys.stdout.flush()
 
         try:
             # ---------------- RETRIEVE ----------------
-            print("[RAG] Retrieving chunks...")
             chunks = retrieve(query)
-
             print("[RAG] Retrieved chunks:", len(chunks))
 
-            if not chunks:
-                print("[RAG] No chunks found")
+            # ✅ HANDLE NO CONTEXT (NEW)
+            if not chunks or chunks[0]["chunk_id"] == "no_context":
                 return {
-                    "answer": "No relevant information found.",
+                    "answer": "This question is outside the indexed knowledge base.",
                     "citations": [],
                     "original_query": query,
                 }
@@ -241,20 +195,14 @@ class RAGService:
             context_text = build_context(chunks)
 
             # ---------------- PROMPT ----------------
-            print("[RAG] Building prompt...")
             prompt = build_prompt(query, context_text)
 
             # ---------------- GENERATION ----------------
-            print("[RAG] Calling LLM...")
             output = self.llm(prompt)[0]["generated_text"].strip()
-
-            print("[RAG] Raw output:", output[:120])
 
             answer = finish_sentence(remove_redundancy(output))
 
-            if not answer:
-                print("[RAG] Empty generation fallback used")
-                answer = safe_preview(chunks[0]["text"], 200)
+            # ✅ NO FALLBACK SUMMARY (REMOVED)
 
             citations = [
                 {
@@ -267,9 +215,6 @@ class RAGService:
                 for i, c in enumerate(chunks)
             ]
 
-            print("[RAG] Answer ready")
-            print("[RAG] ===============================\n")
-
             return {
                 "answer": answer,
                 "citations": citations,
@@ -277,7 +222,6 @@ class RAGService:
             }
 
         except Exception as e:
-            print("\n[RAG FATAL ERROR]")
             traceback.print_exc()
 
             return {
