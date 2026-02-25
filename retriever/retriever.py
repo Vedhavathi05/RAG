@@ -101,6 +101,7 @@ def deduplicate_chunks(results):
 def retrieve(query, k=5):
 
     try:
+        # BGE query instruction
         bge_query = (
             "Represent this sentence for searching relevant passages: "
             + query.strip()
@@ -127,12 +128,32 @@ def retrieve(query, k=5):
 
             meta = meta or {}
 
-            score = cosine(query_vec, emb)
+            base_score = cosine(query_vec, emb)
+
+            text = doc or ""
+            length = len(text.split())
+
+            # ---------------------------------------------------
+            # Minimal ranking improvements (necessary only)
+            # ---------------------------------------------------
+            score = base_score
+
+            # Penalize glossary definitions
+            if text.strip().lower().startswith("glossary"):
+                score *= 0.65
+
+            # Penalize very short chunks
+            if length < 40:
+                score *= 0.75
+
+            # Mild reward for informative passages
+            if 80 <= length <= 400:
+                score *= 1.05
 
             output.append({
                 "rank": 0,
                 "chunk_id": cid,
-                "text": doc or "",
+                "text": text,
                 "score": float(score),
                 "source": meta.get("source", "Unknown"),
                 "position": int(meta.get("position", 0)),
@@ -140,6 +161,21 @@ def retrieve(query, k=5):
 
         output = deduplicate_chunks(output)
         output.sort(key=lambda x: x["score"], reverse=True)
+
+        # ---------------------------------------------------
+        # Relevance Gate (prevents unrelated retrieval)
+        # ---------------------------------------------------
+        TOP_SCORE_THRESHOLD = 0.45  # tuned for bge-base
+
+        if not output or output[0]["score"] < TOP_SCORE_THRESHOLD:
+            return [{
+                "rank": 1,
+                "chunk_id": "no_context",
+                "text": "",
+                "score": 0.0,
+                "source": "None",
+                "position": 0,
+            }]
 
         for i, item in enumerate(output):
             item["rank"] = i + 1
